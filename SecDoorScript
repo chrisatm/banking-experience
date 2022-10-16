@@ -1,0 +1,129 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PhysicsService = game:GetService("PhysicsService")
+
+local SendNotif = ReplicatedStorage.Signals.SendNotif
+
+local secDoorInside = game.Workspace.SecDoorInside
+local secDoorOutside = game.Workspace.SecDoorOutside
+
+local secDoorBindableEvent = Instance.new("BindableEvent")
+secDoorBindableEvent.Parent = script.Parent
+
+
+local PlayersTable = {}
+
+local function SetCollisionGroup(char)
+	for _, child in ipairs(char:GetChildren()) do
+		if child:IsA("BasePart") then
+			PhysicsService:SetPartCollisionGroup(child, "hasKey")
+		end
+	end
+	char.DescendantAdded:Connect(function(descendant)
+		if descendant:IsA("BasePart") then
+			PhysicsService:SetPartCollisionGroup(descendant, "hasKey")
+		end
+	end)
+end
+
+
+local function checkBackpack(plr, char)
+	local backpack = plr:FindFirstChildOfClass("Backpack")
+
+	if backpack then
+		local hasItem = backpack:FindFirstChild("SecurityCard")
+		local holdingItem = plr.Character:FindFirstChildOfClass("Tool")
+		if hasItem then
+			-- set collision group to hasKey
+			SetCollisionGroup(char)
+		elseif holdingItem then
+			if holdingItem.Name == "SecurityCard" then
+				-- set collision group to hasKey
+				SetCollisionGroup(char)
+			end
+		else
+			local msg = "You need a security card to get inside!"
+			SendNotif:FireClient(plr, msg, true)
+		end
+	end
+end
+
+
+local function CheckTouchingParts()
+	-- get part
+	local touchingParts = secDoorOutside:GetTouchingParts()
+	if #touchingParts > 0 then
+		for i,partTouched in pairs(touchingParts) do
+			-- check door again
+			secDoorBindableEvent:Fire(partTouched)
+		end
+	end
+end
+
+
+local function removePlayerFromTable(plr)
+	local playerIndex = table.find(PlayersTable, plr)
+	table.remove(PlayersTable, playerIndex)
+	CheckTouchingParts()
+end
+
+
+local function addPlayerToTable(plr)
+	local tableRemoveDelay = 5
+	table.insert(PlayersTable, plr)
+	task.delay(tableRemoveDelay, function(plr)
+		removePlayerFromTable(plr)
+	end)
+end
+
+
+local function checkHumanoid(plr)
+	local value = false
+	for i,v in pairs(PlayersTable) do
+		if plr == v then
+			value = true
+			return value
+		end
+	end
+	return value
+end
+
+
+local function checkPlrTable(player, humanoid, partTouched)
+	local isOnTable = false
+	
+	if #PlayersTable ~= 0 then
+		-- check table to see if humanoid exists
+		local isOnTableAlready = checkHumanoid(player)
+		if isOnTableAlready == true then
+			isOnTable = true
+		else
+			-- player is NOT on table
+			addPlayerToTable(player)
+			isOnTable = false
+		end
+	else
+		-- no players are on the table
+		addPlayerToTable(player)
+		isOnTable = false
+	end
+	
+	return isOnTable
+end
+
+
+local function handleTouch(partTouched)
+	local partParent = partTouched.Parent
+	local humanoid = partParent:FindFirstChildWhichIsA("Humanoid")
+	if humanoid then
+		local player = game.Players:GetPlayerFromCharacter(partTouched.Parent)
+		local isOnTable = checkPlrTable(player, humanoid, partTouched)
+		if isOnTable == false then
+			checkBackpack(player, partParent)
+		end
+	end
+end
+
+
+--secDoorInside.Touched:Connect(handleInside)
+secDoorOutside.Touched:Connect(handleTouch)
+secDoorBindableEvent.Event:Connect(handleTouch)
